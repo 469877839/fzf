@@ -65,6 +65,117 @@ func TestParseTermsEmpty(t *testing.T) {
 	}
 }
 
+func TestParseTermsWord(t *testing.T) {
+	terms := parseTerms(true, CaseSmart, false, "@foo !@bar \\@baz @Foo")
+	if len(terms) != 4 {
+		t.Fatalf("%v", terms)
+	}
+	word, invWord, escaped, cased := terms[0][0], terms[1][0], terms[2][0], terms[3][0]
+	if word.typ != termExactWord || word.inv || string(word.text) != "foo" || word.caseSensitive {
+		t.Errorf("%v", word)
+	}
+	if invWord.typ != termExactWord || !invWord.inv || string(invWord.text) != "bar" {
+		t.Errorf("%v", invWord)
+	}
+	// \@ escapes the operator: an ordinary fuzzy term with a literal '@'
+	if escaped.typ != termFuzzy || escaped.inv || string(escaped.text) != "@baz" {
+		t.Errorf("%v", escaped)
+	}
+	// Smart case still applies
+	if cased.typ != termExactWord || !cased.caseSensitive || string(cased.text) != "Foo" {
+		t.Errorf("%v", cased)
+	}
+
+	// Word-match operator also applies in --exact mode
+	exactTerms := parseTerms(false, CaseSmart, false, "@foo")
+	if len(exactTerms) != 1 || len(exactTerms[0]) != 1 ||
+		exactTerms[0][0].typ != termExactWord || string(exactTerms[0][0].text) != "foo" {
+		t.Errorf("%v", exactTerms)
+	}
+}
+
+func TestWordMatch(t *testing.T) {
+	pattern := buildPattern(true, algo.FuzzyMatchV2, true, CaseSmart, false, true, true, true,
+		[]Range{}, Delimiter{}, []rune("@foo"))
+	if pattern.cacheable {
+		t.Errorf("word-match pattern must not be cacheable")
+	}
+	if !pattern.sortable {
+		t.Errorf("word-match pattern should stay sortable")
+	}
+
+	match := func(str string, sidxExpected int, eidxExpected int) {
+		item := Item{text: util.RunesToChars([]rune(str))}
+		result, offsets, pos := pattern.MatchItem(&item, true, slab)
+		if sidxExpected < 0 {
+			if result.item != nil || offsets != nil {
+				t.Errorf("expected no match for %q", str)
+			}
+			return
+		}
+		if result.item == nil || len(offsets) != 1 ||
+			offsets[0][0] != int32(sidxExpected) || offsets[0][1] != int32(eidxExpected) {
+			t.Errorf("%q: %v", str, offsets)
+			return
+		}
+		if pos == nil || len(*pos) != eidxExpected-sidxExpected || (*pos)[0] != sidxExpected {
+			t.Errorf("%q: %v", str, *pos)
+		}
+	}
+	match("foo bar", 0, 3)
+	match("a foo", 2, 5)
+	match("foobar", -1, -1)
+	match("foo_bar", -1, -1)
+	// Multi-byte characters before the match: offsets are rune indices
+	match("日本 foo", 3, 6)
+	match("日本foo", -1, -1)
+
+	// Escaped \@foo is a literal fuzzy term, not a word match
+	escaped := buildPattern(true, algo.FuzzyMatchV2, true, CaseSmart, false, true, false, true,
+		[]Range{}, Delimiter{}, []rune("\\@foo"))
+	if res, _, _ := escaped.MatchItem(&Item{text: util.RunesToChars([]rune("x@foox"))}, false, slab); res.item == nil {
+		t.Errorf("literal fuzzy term '@foo' should match %q", "x@foox")
+	}
+	if res, _, _ := pattern.MatchItem(&Item{text: util.RunesToChars([]rune("x@foox"))}, false, slab); res.item != nil {
+		t.Errorf("word-match '@foo' should not match %q", "x@foox")
+	}
+
+	// Inverse word-match
+	inverse := buildPattern(true, algo.FuzzyMatchV2, true, CaseSmart, false, true, false, true,
+		[]Range{}, Delimiter{}, []rune("!@foo"))
+	if res, _, _ := inverse.MatchItem(&Item{text: util.RunesToChars([]rune("a foo b"))}, false, slab); res.item != nil {
+		t.Errorf("!@foo should not match %q", "a foo b")
+	}
+	if res, _, _ := inverse.MatchItem(&Item{text: util.RunesToChars([]rune("a foobar"))}, false, slab); res.item == nil {
+		t.Errorf("!@foo should match %q", "a foobar")
+	}
+}
+
+func TestWordMatchNth(t *testing.T) {
+	nth := []Range{newRange(3, 3)}
+	pattern := buildPattern(true, algo.FuzzyMatchV2, true, CaseSmart, false, true, true, true,
+		nth, Delimiter{}, []rune("@foo"))
+
+	// The word occurrence is inside the third field; offsets are mapped back
+	// to the original line.
+	item := Item{text: util.RunesToChars([]rune("foo xfoo foo"))}
+	result, offsets, pos := pattern.MatchItem(&item, true, slab)
+	if result.item == nil || len(offsets) != 1 || offsets[0][0] != 9 || offsets[0][1] != 12 {
+		t.Fatalf("%v", offsets)
+	}
+	if pos == nil || len(*pos) != 3 || (*pos)[0] != 9 || (*pos)[2] != 11 {
+		t.Errorf("%v", *pos)
+	}
+
+	// The only word occurrence is outside the nth scope
+	nth2 := []Range{newRange(2, 2)}
+	pattern2 := buildPattern(true, algo.FuzzyMatchV2, true, CaseSmart, false, true, false, true,
+		nth2, Delimiter{}, []rune("@foo"))
+	if res, _, _ := pattern2.MatchItem(&Item{text: util.RunesToChars([]rune("foo xfoo foo"))}, false, slab); res.item != nil {
+		t.Errorf("@foo with --nth=2 should not match %q", "foo xfoo foo")
+	}
+}
+
 func buildPattern(fuzzy bool, fuzzyAlgo algo.Algo, extended bool, caseMode Case, normalize bool, forward bool,
 	withPos bool, cacheable bool, nth []Range, delimiter Delimiter, runes []rune) *Pattern {
 	return BuildPattern(NewChunkCache(), make(map[string]*Pattern),

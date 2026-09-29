@@ -140,6 +140,54 @@ func TestExactMatchNaiveBackward(t *testing.T) {
 		scoreMatch*2+bonusConsecutive)
 }
 
+func TestExactMatchWord(t *testing.T) {
+	scoreAtWhiteBoundary := scoreMatch*3 + int(bonusBoundaryWhite)*bonusFirstCharMultiplier + int(bonusBoundaryWhite)*2
+	for _, dir := range []bool{true, false} {
+		// Whole-word occurrences
+		assertMatch(t, ExactMatchWord, false, dir, "foo bar", "foo", 0, 3, scoreAtWhiteBoundary)
+		assertMatch(t, ExactMatchWord, false, dir, "bar foo", "foo", 4, 7, scoreAtWhiteBoundary)
+		assertMatch(t, ExactMatchWord, false, dir, "foo", "foo", 0, 3, scoreAtWhiteBoundary)
+		assertMatch(t, ExactMatchWord, false, dir, "foo-bar", "foo", 0, 3, scoreAtWhiteBoundary)
+		assertMatch(t, ExactMatchWord, false, dir, "(foo)", "foo", 1, 4,
+			scoreMatch*3+bonusNonWord*(bonusFirstCharMultiplier+2))
+		assertMatch(t, ExactMatchWord, false, dir, "FOO bar", "foo", 0, 3, scoreAtWhiteBoundary)
+
+		// Embedded in a word: no match
+		assertMatch(t, ExactMatchWord, false, dir, "xfoo", "foo", -1, -1, 0)
+		assertMatch(t, ExactMatchWord, false, dir, "foox", "foo", -1, -1, 0)
+		assertMatch(t, ExactMatchWord, false, dir, "foobar", "foo", -1, -1, 0)
+		assertMatch(t, ExactMatchWord, false, dir, "barfoo", "foo", -1, -1, 0)
+
+		// Underscore and digits are word characters
+		assertMatch(t, ExactMatchWord, false, dir, "foo_bar", "foo", -1, -1, 0)
+		assertMatch(t, ExactMatchWord, false, dir, "bar_foo", "foo", -1, -1, 0)
+		assertMatch(t, ExactMatchWord, false, dir, "foo1", "foo", -1, -1, 0)
+		assertMatch(t, ExactMatchWord, false, dir, "1foo", "foo", -1, -1, 0)
+
+		// Skip non-word occurrences and find the word one
+		assertMatch(t, ExactMatchWord, false, dir, "foobar foo", "foo", 7, 10, scoreAtWhiteBoundary)
+		assertMatch(t, ExactMatchWord, false, dir, "foo foobar", "foo", 0, 3, scoreAtWhiteBoundary)
+		assertMatch(t, ExactMatchWord, false, dir, "FooBar foo", "foo", 7, 10, scoreAtWhiteBoundary)
+
+		// Unicode letters are word characters; offsets are rune indices
+		assertMatch(t, ExactMatchWord, false, dir, "日本語 foo 日本", "foo", 4, 7, scoreAtWhiteBoundary)
+		assertMatch(t, ExactMatchWord, false, dir, "日本foo", "foo", -1, -1, 0)
+		assertMatch(t, ExactMatchWord, false, dir, "foo日本", "foo", -1, -1, 0)
+
+		// Case-sensitive
+		assertMatch(t, ExactMatchWord, true, dir, "FOO foo", "foo", 4, 7, scoreAtWhiteBoundary)
+		assertMatch(t, ExactMatchWord, true, dir, "FOO bar", "foo", -1, -1, 0)
+	}
+}
+
+func TestExactMatchWordEmptyPattern(t *testing.T) {
+	chars := util.ToChars([]byte("foo"))
+	res, pos := ExactMatchWord(false, false, true, &chars, []rune{}, true, nil)
+	if res.Start != 0 || res.End != 0 || res.Score != 0 || pos != nil {
+		t.Errorf("%v %v", res, pos)
+	}
+}
+
 func TestPrefixMatch(t *testing.T) {
 	score := scoreMatch*3 + int(bonusBoundaryWhite)*bonusFirstCharMultiplier + int(bonusBoundaryWhite)*2
 

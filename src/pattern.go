@@ -11,10 +11,12 @@ import (
 
 // fuzzy
 // 'exact
+// @word
 // ^prefix-exact
 // suffix-exact$
 // !inverse-exact
 // !'inverse-fuzzy
+// !@inverse-word
 // !^inverse-prefix-exact
 // !inverse-suffix-exact$
 
@@ -27,6 +29,7 @@ const (
 	termPrefix
 	termSuffix
 	termEqual
+	termExactWord
 )
 
 type term struct {
@@ -61,7 +64,7 @@ type Pattern struct {
 	delimiter     Delimiter
 	nth           []Range
 	revision      revision
-	procFun       [6]algo.Algo
+	procFun       [7]algo.Algo
 	cache         *ChunkCache
 	denylist      map[int32]struct{}
 	startIndex    int32
@@ -160,6 +163,7 @@ func BuildPattern(cache *ChunkCache, patternCache map[string]*Pattern, fuzzy boo
 	ptr.procFun[termExactBoundary] = algo.ExactMatchBoundary
 	ptr.procFun[termPrefix] = algo.PrefixMatch
 	ptr.procFun[termSuffix] = algo.SuffixMatch
+	ptr.procFun[termExactWord] = algo.ExactMatchWord
 
 	patternCache[asString] = ptr
 	return ptr
@@ -167,6 +171,9 @@ func BuildPattern(cache *ChunkCache, patternCache map[string]*Pattern, fuzzy boo
 
 func parseTerms(fuzzy bool, caseMode Case, normalize bool, str string) []termSet {
 	str = strings.ReplaceAll(str, "\\ ", "\t")
+	// Placeholder for an escaped '@' so that it is not mistaken for the
+	// word-match operator. Restored to '@' when each term is built.
+	str = strings.ReplaceAll(str, "\\@", "\x00")
 	tokens := _splitRegex.Split(str, -1)
 	sets := []termSet{}
 	set := termSet{}
@@ -222,6 +229,9 @@ func parseTerms(fuzzy bool, caseMode Case, normalize bool, str string) []termSet
 				typ = termPrefix
 			}
 			text = text[1:]
+		} else if strings.HasPrefix(text, "@") {
+			typ = termExactWord
+			text = text[1:]
 		}
 
 		if len(text) > 0 {
@@ -229,6 +239,7 @@ func parseTerms(fuzzy bool, caseMode Case, normalize bool, str string) []termSet
 				sets = append(sets, set)
 				set = termSet{}
 			}
+			text = strings.ReplaceAll(text, "\x00", "@")
 			textRunes := []rune(text)
 			if normalizeTerm {
 				textRunes = algo.NormalizeRunes(textRunes)

@@ -405,11 +405,17 @@ type in multiple search terms delimited by spaces. e.g. `^music .mp3$ sbtrkt
 | `sbtrkt`  | fuzzy-match                             | Items that match `sbtrkt`                    |
 | `'wild`   | exact-match (quoted)                    | Items that include `wild`                    |
 | `'wild'`  | exact-boundary-match (quoted both ends) | Items that include `wild` at word boundaries |
+| `@wild`   | word-match                              | Items that include `wild` as a whole word    |
 | `^music`  | prefix-exact-match                      | Items that start with `music`                |
 | `.mp3$`   | suffix-exact-match                      | Items that end with `.mp3`                   |
 | `!fire`   | inverse-exact-match                     | Items that do not include `fire`             |
+| `!@wild`  | inverse-word-match                      | Items that do not include `wild` as a word   |
 | `!^music` | inverse-prefix-exact-match              | Items that do not start with `music`         |
 | `!.mp3$`  | inverse-suffix-exact-match              | Items that do not end with `.mp3`            |
+
+A word in a `@wild` term is delimited by characters that are not Unicode
+letters, digits, or underscores. To search for a literal `@` at the start of
+a term, escape it with a backslash: `\@wild`.
 
 If you don't prefer fuzzy matching and do not wish to "quote" every word,
 start fzf with `-e` or `--exact` option. Note that when  `--exact` is set,

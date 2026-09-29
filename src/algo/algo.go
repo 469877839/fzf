@@ -1117,6 +1117,98 @@ func ExactMatchBoundary(caseSensitive bool, normalize bool, forward bool, text *
 	return exactMatchNaive(caseSensitive, normalize, forward, true, text, pattern, withPos, slab)
 }
 
+// isWordChar reports whether the rune is a word character: a Unicode letter,
+// a Unicode digit, or an underscore.
+func isWordChar(char rune) bool {
+	return char == '_' || unicode.IsLetter(char) || unicode.IsDigit(char)
+}
+
+// ExactMatchWord performs exact-match, but only accepts occurrences that span
+// a whole word: the characters immediately before and after the match must
+// not be word characters. The scoring is identical to ExactMatchNaive so that
+// the result stays comparable with the other exact-match term types.
+func ExactMatchWord(caseSensitive bool, normalize bool, forward bool, text *util.Chars, pattern []rune, withPos bool, slab *util.Slab) (Result, *[]int) {
+	if len(pattern) == 0 {
+		return Result{0, 0, 0}, nil
+	}
+
+	lenRunes := text.Length()
+	lenPattern := len(pattern)
+
+	if lenRunes < lenPattern {
+		return Result{-1, -1, 0}, nil
+	}
+
+	idx, _ := asciiFuzzyIndex(text, pattern, caseSensitive)
+	if idx < 0 {
+		return Result{-1, -1, 0}, nil
+	}
+
+	// For simplicity, only look at the bonus at the first character position
+	pidx := 0
+	bonus, bestBonus := int16(0), int16(-1)
+	bestPos := -1
+	for index := 0; index < lenRunes; index++ {
+		index_ := indexAt(index, lenRunes, forward)
+		char := text.Get(index_)
+		if !caseSensitive {
+			if char >= 'A' && char <= 'Z' {
+				char += 32
+			} else if char > unicode.MaxASCII {
+				char = unicode.To(unicode.LowerCase, char)
+			}
+		}
+		if normalize {
+			char = normalizeRune(char)
+		}
+		pidx_ := indexAt(pidx, lenPattern, forward)
+		pchar := pattern[pidx_]
+		if pchar == char {
+			if pidx_ == 0 {
+				bonus = bonusAt(text, index_)
+			}
+			pidx++
+			if pidx == lenPattern {
+				var sidx, eidx int
+				if forward {
+					sidx = index - lenPattern + 1
+					eidx = index + 1
+				} else {
+					sidx = lenRunes - (index + 1)
+					eidx = lenRunes - (index - lenPattern + 1)
+				}
+				if (sidx == 0 || !isWordChar(text.Get(sidx-1))) &&
+					(eidx == lenRunes || !isWordChar(text.Get(eidx))) {
+					if bonus > bestBonus {
+						bestPos, bestBonus = index, bonus
+					}
+					if bonus >= bonusBoundary {
+						break
+					}
+				}
+				index -= pidx - 1
+				pidx, bonus = 0, 0
+			}
+		} else {
+			index -= pidx
+			pidx, bonus = 0, 0
+		}
+	}
+	if bestPos >= 0 {
+		var sidx, eidx int
+		if forward {
+			sidx = bestPos - lenPattern + 1
+			eidx = bestPos + 1
+		} else {
+			sidx = lenRunes - (bestPos + 1)
+			eidx = lenRunes - (bestPos - lenPattern + 1)
+		}
+		score, pos := calculateScore(caseSensitive, normalize, text, pattern, sidx, eidx, withPos)
+		return Result{sidx, eidx, score}, pos
+	}
+	return Result{-1, -1, 0}, nil
+}
+
 func exactMatchNaive(caseSensitive bool, normalize bool, forward bool, boundaryCheck bool, text *util.Chars, pattern []rune, withPos bool, slab *util.Slab) (Result, *[]int) {
 	if len(pattern) == 0 {
 		return Result{0, 0, 0}, nil

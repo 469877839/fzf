@@ -3,6 +3,13 @@ CHANGELOG
 
 0.74.5
 ------
+- Added `word-match` type to the search syntax. A term prefixed with `@`
+  matches only when the string occurs as a whole word, i.e. both ends of the
+  match are adjacent to a non-word character or the edge of the text. Word
+  characters are Unicode letters, digits, and underscores.
+    - e.g. `@foo` matches `a foo b` and `foo-bar`, but not `foobar` or `foo_bar`
+    - `!@foo` negates the term
+    - To search for a literal `@` at the start of a term, escape it: `\@foo`
 - Fixed `--gap-line` cutting a grapheme cluster when filling the last cells of the line (#4920)
 
 0.74.4
