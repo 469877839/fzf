@@ -140,6 +140,50 @@ func TestExactMatchNaiveBackward(t *testing.T) {
 		scoreMatch*2+bonusConsecutive)
 }
 
+func TestWholeWordMatch(t *testing.T) {
+	for _, dir := range []bool{true, false} {
+		// The string stands alone as a word
+		assertMatch(t, WholeWordMatch, false, dir, "foo", "foo", 0, 3,
+			scoreMatch*3+int(bonusBoundaryWhite)*bonusFirstCharMultiplier+int(bonusBoundaryWhite)*2)
+		assertMatch(t, WholeWordMatch, false, dir, "foo bar baz", "bar", 4, 7,
+			scoreMatch*3+int(bonusBoundaryWhite)*bonusFirstCharMultiplier+int(bonusBoundaryWhite)*2)
+		// Non-word characters on both ends
+		assertMatch(t, WholeWordMatch, false, dir, "(foo)", "foo", 1, 4,
+			scoreMatch*3+bonusBoundary*bonusFirstCharMultiplier+bonusBoundary*2)
+		assertMatch(t, WholeWordMatch, false, dir, "foo-bar", "foo", 0, 3,
+			scoreMatch*3+int(bonusBoundaryWhite)*bonusFirstCharMultiplier+int(bonusBoundaryWhite)*2)
+		// Flanked by word characters: letters, digits, and underscore
+		assertMatch(t, WholeWordMatch, false, dir, "foobar", "foo", -1, -1, 0)
+		assertMatch(t, WholeWordMatch, false, dir, "barfoo", "foo", -1, -1, 0)
+		assertMatch(t, WholeWordMatch, false, dir, "foo1", "foo", -1, -1, 0)
+		assertMatch(t, WholeWordMatch, false, dir, "1foo", "foo", -1, -1, 0)
+		// Unlike ExactMatchBoundary, underscore is not a word boundary
+		assertMatch(t, WholeWordMatch, false, dir, "foo_bar", "foo", -1, -1, 0)
+		assertMatch(t, WholeWordMatch, false, dir, "bar_foo", "foo", -1, -1, 0)
+		// Unicode letters and numbers are word characters
+		assertMatch(t, WholeWordMatch, false, dir, "日本foo", "foo", -1, -1, 0)
+		assertMatch(t, WholeWordMatch, false, dir, "foo日本", "foo", -1, -1, 0)
+		assertMatch(t, WholeWordMatch, false, dir, "café", "caf", -1, -1, 0)
+		assertMatch(t, WholeWordMatch, false, dir, "日 foo 本", "foo", 2, 5,
+			scoreMatch*3+int(bonusBoundaryWhite)*bonusFirstCharMultiplier+int(bonusBoundaryWhite)*2)
+		// Case sensitivity
+		assertMatch(t, WholeWordMatch, false, dir, "Foo BAR", "foo", 0, 3,
+			scoreMatch*3+int(bonusBoundaryWhite)*bonusFirstCharMultiplier+int(bonusBoundaryWhite)*2)
+		assertMatch(t, WholeWordMatch, true, dir, "FOO bar", "foo", -1, -1, 0)
+		// Single-character pattern
+		assertMatch(t, WholeWordMatch, false, dir, "a b c", "b", 2, 3,
+			scoreMatch+int(bonusBoundaryWhite)*bonusFirstCharMultiplier)
+		assertMatch(t, WholeWordMatch, false, dir, "ab", "b", -1, -1, 0)
+		// Pattern longer than the text
+		assertMatch(t, WholeWordMatch, false, dir, "fo", "foo", -1, -1, 0)
+	}
+	// Occurrences failing the word check are skipped
+	assertMatch(t, WholeWordMatch, false, true, "xfoo foo", "foo", 5, 8,
+		scoreMatch*3+int(bonusBoundaryWhite)*bonusFirstCharMultiplier+int(bonusBoundaryWhite)*2)
+	assertMatch(t, WholeWordMatch, false, false, "foo foox", "foo", 0, 3,
+		scoreMatch*3+int(bonusBoundaryWhite)*bonusFirstCharMultiplier+int(bonusBoundaryWhite)*2)
+}
+
 func TestPrefixMatch(t *testing.T) {
 	score := scoreMatch*3 + int(bonusBoundaryWhite)*bonusFirstCharMultiplier + int(bonusBoundaryWhite)*2
 

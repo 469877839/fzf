@@ -65,6 +65,87 @@ func TestParseTermsEmpty(t *testing.T) {
 	}
 }
 
+func TestParseTermsWord(t *testing.T) {
+	// Fuzzy mode
+	terms := parseTerms(true, CaseSmart, false, "@foo !@bar \\@baz '@qux")
+	if len(terms) != 4 ||
+		terms[0][0].typ != termWord || terms[0][0].inv || string(terms[0][0].text) != "foo" ||
+		terms[1][0].typ != termWord || !terms[1][0].inv || string(terms[1][0].text) != "bar" ||
+		terms[2][0].typ != termFuzzy || terms[2][0].inv || string(terms[2][0].text) != "@baz" ||
+		terms[3][0].typ != termExact || terms[3][0].inv || string(terms[3][0].text) != "@qux" {
+		t.Errorf("%v", terms)
+	}
+
+	// Non-fuzzy mode
+	terms = parseTerms(false, CaseSmart, false, "@foo \\@bar")
+	if len(terms) != 2 ||
+		terms[0][0].typ != termWord || terms[0][0].inv || string(terms[0][0].text) != "foo" ||
+		terms[1][0].typ != termExact || terms[1][0].inv || string(terms[1][0].text) != "@bar" {
+		t.Errorf("%v", terms)
+	}
+
+	// A lone @ is not a valid term
+	terms = parseTerms(true, CaseSmart, false, "@")
+	if len(terms) != 0 {
+		t.Errorf("%v", terms)
+	}
+}
+
+func TestWholeWord(t *testing.T) {
+	match := func(query string, str string, expected bool) {
+		pattern := buildPattern(true, algo.FuzzyMatchV2, true, CaseSmart, false, true, false, true,
+			[]Range{}, Delimiter{}, []rune(query))
+		item := Item{text: util.ToChars([]byte(str))}
+		res, _, _ := pattern.MatchItem(&item, false, slab)
+		if (res.item != nil) != expected {
+			t.Errorf("%q / %q: expected %v", query, str, expected)
+		}
+	}
+	match("@foo", "foo", true)
+	match("@foo", "a foo b", true)
+	match("@foo", "(foo)", true)
+	match("@foo", "@foo", true)
+	match("@foo", "foo.", true)
+	match("@foo", "foobar", false)
+	match("@foo", "barfoo", false)
+	match("@foo", "foo_bar", false)
+	match("@foo", "foo1", false)
+	// Smart case
+	match("@foo", "Foo", true)
+	match("@Foo", "foo", false)
+	match("@Foo", "a Foo.", true)
+	// Inverse
+	match("!@foo", "foobar", true)
+	match("!@foo", "foo", false)
+	match("!@foo", "a foo b", false)
+	// Escaped @ is a literal character in a fuzzy term
+	match("\\@foo", "@foo", true)
+	match("\\@foo", "foo", false)
+	match("\\@foo", "xx@foox", true)
+}
+
+func TestWholeWordPos(t *testing.T) {
+	// Positions are mapped back to the original line, also with --nth
+	for _, nth := range [][]Range{{}, {{2, 2}}} {
+		pattern := buildPattern(true, algo.FuzzyMatchV2, true, CaseSmart, false, true, true, true,
+			nth, Delimiter{}, []rune("@foo"))
+		item := Item{text: util.ToChars([]byte("xx foo yy"))}
+		_, _, pos := pattern.MatchItem(&item, true, slab)
+		if pos == nil || !reflect.DeepEqual(*pos, []int{3, 4, 5}) {
+			t.Errorf("nth=%v: invalid pos %v", nth, pos)
+		}
+	}
+
+	// Multi-byte characters before the match
+	pattern := buildPattern(true, algo.FuzzyMatchV2, true, CaseSmart, false, true, true, true,
+		[]Range{}, Delimiter{}, []rune("@foo"))
+	item := Item{text: util.ToChars([]byte("日本 foo"))}
+	_, _, pos := pattern.MatchItem(&item, true, slab)
+	if pos == nil || !reflect.DeepEqual(*pos, []int{3, 4, 5}) {
+		t.Errorf("invalid pos %v", pos)
+	}
+}
+
 func buildPattern(fuzzy bool, fuzzyAlgo algo.Algo, extended bool, caseMode Case, normalize bool, forward bool,
 	withPos bool, cacheable bool, nth []Range, delimiter Delimiter, runes []rune) *Pattern {
 	return BuildPattern(NewChunkCache(), make(map[string]*Pattern),
@@ -193,12 +274,15 @@ func TestCacheable(t *testing.T) {
 	test(true, "foo bar", "foo\tbar", true)
 	test(true, "foo 'bar", "foo\tbar", false)
 	test(true, "foo !bar", "foo", false)
+	test(true, "foo @bar", "foo\tbar", false)
+	test(true, "@foo", "foo", false)
 
 	test(false, "foo bar", "foo\tbar", true)
 	test(false, "foo 'bar", "foo", false)
 	test(false, "foo '", "foo", true)
 	test(false, "foo 'bar", "foo", false)
 	test(false, "foo !bar", "foo", false)
+	test(false, "foo @bar", "foo", false)
 }
 
 func buildChunks(numChunks int) []*Chunk {

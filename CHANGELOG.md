@@ -3,6 +3,14 @@ CHANGELOG
 
 0.74.5
 ------
+- Added `@` whole-word match operator to extended search mode
+    - A term prefixed with `@` only matches when the string appears as a
+      whole word, i.e. flanked by non-word characters (anything other than
+      Unicode letters, numbers, and underscore) or the edges of the string
+    - e.g. `@foo` matches `foo` and `(foo)`, but not `foobar` or `foo_bar`
+    - Can be negated with `!` (e.g. `!@foo`), and combined with other terms
+    - Since `@` was previously an ordinary character, you can escape it with
+      a backslash (`\@foo`) to keep matching it literally
 - Fixed `--gap-line` cutting a grapheme cluster when filling the last cells of the line (#4920)
 
 0.74.4

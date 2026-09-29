@@ -15,6 +15,16 @@ class TestFilter < TestBase
     assert_equal 4, `seq 123 | #{FZF} -f 13 +e`.lines.length
   end
 
+  def test_whole_word
+    input = %w[foo foobar foo_bar (foo) a\ foo\ b @foo].join("\n")
+    assert_equal %w[foo a\ foo\ b @foo (foo)], `echo "#{input}" | #{FZF} -f "@foo"`.lines(chomp: true)
+    assert_equal %w[foobar foo_bar], `echo "#{input}" | #{FZF} -f "!@foo"`.lines(chomp: true)
+    # \@ escapes the operator: literal @ in a fuzzy term
+    assert_equal %w[@foo], `echo "#{input}" | #{FZF} -f '\@foo'`.lines(chomp: true)
+    # @ is an ordinary character outside extended search mode
+    assert_equal %w[@foo], `echo "#{input}" | #{FZF} -f '@foo' +x`.lines(chomp: true)
+  end
+
   def test_or_operator
     assert_equal %w[1 5 10], `seq 10 | #{FZF} -f "1 | 5"`.lines(chomp: true)
     assert_equal %w[1 10 2 3 4 5 6 7 8 9],

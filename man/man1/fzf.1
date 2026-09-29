@@ -1572,6 +1572,8 @@ mode, you can specify multiple patterns delimited by spaces, such as: \fB'wild
 
 You can prepend a backslash to a space (\fB\\ \fR) to match a literal space
 character.
+Similarly, you can prepend a backslash to an at sign (\fB\\@\fR) to match
+a literal @ character instead of using it as the whole\-word match operator.
 
 .SS Exact\-match (quoted)
 A term that is prefixed by a single-quote character (\fB'\fR) is interpreted as
@@ -1598,6 +1600,17 @@ boundaries.
 3. xxx_foo xxx
 .br
 4. xxx_foo_xxx (lowest score)
+
+.SS Whole\-word\-match
+A term that is prefixed by an at sign (\fB@\fR) is interpreted as
+a "whole\-word\-match" term. fzf will search for the exact occurrences of the
+string that stand alone as a word, i.e. the characters on both sides of the
+match are not word characters. Word characters are Unicode letters, numbers,
+and the underscore. So unlike exact\-boundary\-match, an underscore does not
+count as a word boundary here.
+
+e.g. \fB@foo\fR matches \fBfoo\fR and \fB(foo)\fR, but not \fBfoobar\fR or
+\fBfoo_bar\fR
 
 .SS Negation
 If a term is prefixed by \fB!\fR, fzf will exclude the lines that satisfy the

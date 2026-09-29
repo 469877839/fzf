@@ -1110,14 +1110,41 @@ func FuzzyMatchV1(caseSensitive bool, normalize bool, forward bool, text *util.C
 // The solution is much cheaper since there is only one possible alignment of
 // the pattern.
 func ExactMatchNaive(caseSensitive bool, normalize bool, forward bool, text *util.Chars, pattern []rune, withPos bool, slab *util.Slab) (Result, *[]int) {
-	return exactMatchNaive(caseSensitive, normalize, forward, false, text, pattern, withPos, slab)
+	return exactMatchNaive(caseSensitive, normalize, forward, boundaryNone, text, pattern, withPos, slab)
 }
 
 func ExactMatchBoundary(caseSensitive bool, normalize bool, forward bool, text *util.Chars, pattern []rune, withPos bool, slab *util.Slab) (Result, *[]int) {
-	return exactMatchNaive(caseSensitive, normalize, forward, true, text, pattern, withPos, slab)
+	return exactMatchNaive(caseSensitive, normalize, forward, boundaryExact, text, pattern, withPos, slab)
 }
 
-func exactMatchNaive(caseSensitive bool, normalize bool, forward bool, boundaryCheck bool, text *util.Chars, pattern []rune, withPos bool, slab *util.Slab) (Result, *[]int) {
+// WholeWordMatch performs an exact match that only succeeds when the matched
+// string stands alone as a word, i.e. the characters immediately before and
+// after the match are not word characters. Word characters are Unicode
+// letters, numbers, and the underscore.
+func WholeWordMatch(caseSensitive bool, normalize bool, forward bool, text *util.Chars, pattern []rune, withPos bool, slab *util.Slab) (Result, *[]int) {
+	return exactMatchNaive(caseSensitive, normalize, forward, boundaryWord, text, pattern, withPos, slab)
+}
+
+// Boundary check modes for exactMatchNaive
+const (
+	boundaryNone = iota
+	boundaryExact
+	boundaryWord
+)
+
+// isWordRune returns true if the rune is a word character: a Unicode letter
+// or number, or the underscore.
+func isWordRune(char rune) bool {
+	if char <= unicode.MaxASCII {
+		return char == '_' ||
+			char >= 'a' && char <= 'z' ||
+			char >= 'A' && char <= 'Z' ||
+			char >= '0' && char <= '9'
+	}
+	return unicode.IsLetter(char) || unicode.IsNumber(char)
+}
+
+func exactMatchNaive(caseSensitive bool, normalize bool, forward bool, boundary int, text *util.Chars, pattern []rune, withPos bool, slab *util.Slab) (Result, *[]int) {
 	if len(pattern) == 0 {
 		return Result{0, 0, 0}, nil
 	}
@@ -1157,7 +1184,7 @@ func exactMatchNaive(caseSensitive bool, normalize bool, forward bool, boundaryC
 			if pidx_ == 0 {
 				bonus = bonusAt(text, index_)
 			}
-			if boundaryCheck {
+			if boundary == boundaryExact {
 				if forward && pidx_ == 0 {
 					bbonus = bonus
 				} else if !forward && pidx_ == lenPattern-1 {
@@ -1173,6 +1200,14 @@ func exactMatchNaive(caseSensitive bool, normalize bool, forward bool, boundaryC
 				}
 				if ok && pidx_ == len(pattern)-1 {
 					ok = index_ == lenRunes-1 || charClassOf(text.Get(index_+1)) <= charDelimiter
+				}
+			} else if boundary == boundaryWord {
+				// The match must be flanked by non-word characters
+				if pidx_ == 0 {
+					ok = index_ == 0 || !isWordRune(text.Get(index_-1))
+				}
+				if ok && pidx_ == lenPattern-1 {
+					ok = index_ == lenRunes-1 || !isWordRune(text.Get(index_+1))
 				}
 			}
 		}
@@ -1203,7 +1238,7 @@ func exactMatchNaive(caseSensitive bool, normalize bool, forward bool, boundaryC
 			eidx = lenRunes - (bestPos - lenPattern + 1)
 		}
 		var score int
-		if boundaryCheck {
+		if boundary == boundaryExact {
 			// Underscore boundaries should be ranked lower than the other types of boundaries
 			score = int(bonus)
 			deduct := int(bonus-bonusBoundary) + 1
